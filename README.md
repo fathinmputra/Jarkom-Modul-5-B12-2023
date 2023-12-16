@@ -305,7 +305,72 @@ route add -net 0.0.0.0 netmask 0.0.0.0 gw 192.184.14.1
 
 
 ## DHCP Configuration
+- **Revolte (DHCP Server)**
 
+Mengubah Interface pada `/etc/default/isc-dhcp-server`.
+```
+INTERFACESv4="eth0"
+```
+
+Kemudian pada `/etc/dhcp/dhcpd.conf`, ditambahkan konfigurasi dhcp untuk tiap client.
+```
+# Laubhills
+subnet 192.184.12.0 netmask 255.255.254.0 {
+    range 192.184.12.2 192.184.13.254;
+    option routers 192.184.12.1;
+    option broadcast-address 192.184.13.255;
+    option domain-name-servers 192.184.14.134;
+    default-lease-time 600;
+    max-lease-time 7200;
+}
+
+# SchwerMountains
+subnet 192.184.14.0 netmask 255.255.255.128 {
+    range 192.184.14.3 192.184.14.126;
+    option routers 192.184.14.1;
+    option broadcast-address 192.184.14.127;
+    option domain-name-servers 192.184.14.134;
+    default-lease-time 600;
+    max-lease-time 7200;
+}
+
+# TurkRegion
+subnet 192.184.0.0 netmask 255.255.248.0 {
+    range 192.184.0.2 192.184.7.254;
+    option routers 192.184.0.1;
+    option broadcast-address 192.184.7.255;
+    option domain-name-servers 192.184.14.134;
+    default-lease-time 600;
+    max-lease-time 7200;
+}
+
+# GrobeForest
+subnet 192.184.8.0 netmask 255.255.252.0 {
+    range 192.184.8.3 192.184.11.254;
+    option routers 192.184.8.1;
+    option broadcast-address 192.184.11.255;
+    option domain-name-servers 192.184.14.134;
+    default-lease-time 600;
+    max-lease-time 7200;
+}
+
+# Revolte ke Fern
+subnet 192.184.14.128 netmask 255.255.255.252 {
+    option routers 192.184.14.129;
+}
+```
+
+- **DHCP Relay (Fern, Himmel, Frieren, Heiter)**
+
+Agar client mendapatkan dhcp maka diperlukan dhcp relay. Pada masing masing DHCP Relay, ditambahkan konfigurasi pada `/etc/default/isc-dhcp-relay` seperti berikut :
+```
+SERVERS="192.184.14.130"
+
+INTERFACES="eth0 eth1 eth2"
+```
+
+- `SERVERS` adalah ip dari dhcp server (Revolte).
+- `INTERFACES` adalah eth apa saja yang dipakai oleh router tersebut.
 
 # Soal
 ## NO. 1
@@ -485,20 +550,148 @@ iptables -A INPUT -j REJECT
 ## NO. 6
 Lalu, karena ternyata terdapat beberapa waktu di mana network administrator dari WebServer tidak bisa stand by, sehingga perlu ditambahkan rule bahwa akses pada hari Senin - Kamis pada jam 12.00 - 13.00 dilarang (istirahat maksi cuy) dan akses di hari Jumat pada jam 11.00 - 13.00 juga dilarang (maklum, Jumatan rek).
 
+### Penjelasan :
+
+Untuk mengatur akses menuju WebServer yang tidak boleh / dilarang pada saat jam istirahat dan Jumatan, kita dapat menggunakan command seperti berikut :
+
+```
+iptables -F
+
+iptables -A INPUT -m time --timestart 12:00 --timestop 13:00 --weekdays Mon,Tue,Wed,Thu -j REJECT
+iptables -A INPUT -m time --timestart 11:00 --timestop 13:00 --weekdays Fri -j REJECT
+iptables -A INPUT -m time --timestart 08:00 --timestop 16:00 --weekdays Mon,Tue,Wed,Thu,Fri -j ACCEPT
+iptables -A INPUT -j REJECT
+```
+
+**Keterangan :**
+- iptables -F untuk mereset konfigurasi iptables, karena urutan command command sangat penting agar iptables dapat berjalan sesuai yang diinginkan.
+- iptalbes pertama adalah untuk reject/menolak akses pada hari Senin(Mon), Selasa(Tue), Rabu(Wed), dan Kamis(Thu) pada jam 12:00 sampai jam 13:00 (Jam istirahat).
+- iptables kedua adalah untuk reject/menolak akses pada hari Jumat pada jam 11:00 sampai jam 13:00 (Jam Jumatan).
+- iptables ketiga adalah untuk accept/menerima akses pada jam kerja (Seperti nomor 5).
+- iptables keempat adalah untuk reject/menolak akses pada jam dan hari selain itu.
+
+**Testing dan Hasil :**
+- Teting pada jam kerja
+```
+date -u 1213133023
+ping 192.184.8.2 -c 5
+```
+
+![image](https://github.com/fathinmputra/Jarkom-Modul-5-B12-2023/assets/133391111/ff4f6d51-9a92-4f67-b0a9-153a137ef5ac)
+
+
+- Testing di luar jam kerja
+```
+date -u 1213123023
+ping 192.184.8.2 -c 5
+```
+![image](https://github.com/fathinmputra/Jarkom-Modul-5-B12-2023/assets/133391111/166d9fda-c035-4986-b493-ced24de897d0)
+
 ## NO. 7
 Karena terdapat 2 WebServer, kalian diminta agar setiap client yang mengakses Sein dengan Port 80 akan didistribusikan secara bergantian pada Sein dan Stark secara berurutan dan request dari client yang mengakses Stark dengan port 443 akan didistribusikan secara bergantian pada Sein dan Stark secara berurutan.
 
+### Penjelasan
+
+```
+iptables -A PREROUTING -t nat -p tcp --dport 80 -d 192.184.8.2 -m statistic --mode nth --every 2 --packet 0 -j DNAT --to-destination 192.184.8.2
+iptables -A PREROUTING -t nat -p tcp --dport 80 -d 192.184.8.2 -j DNAT --to-destination 192.184.14.142
+
+iptables -A PREROUTING -t nat -p tcp --dport 443 -d 192.184.14.142 -m statistic --mode nth --every 2 --packet 0 -j DNAT --to-destination 192.184.14.142
+iptables -A PREROUTING -t nat -p tcp --dport 443 -d 192.184.14.142 -j DNAT --to-destination 192.184.8.2
+```
+- iptables pertama,  ini menggunakan modul "statistic" dengan opsi "--mode nth" dan "--every 2" untuk mengalihkan setiap paket kedua yang memenuhi kondisi. Artinya, setiap paket kedua yang menuju ke IP 192.184.8.2 pada port 80 akan dialihkan ke IP 192.184.8.2 itu sendiri.
+- iptables kedua, Setiap paket yang menuju ke IP 192.184.8.2 pada port 80 akan dialihkan ke IP 192.184.14.142.
+- Jika kita menggabungkan kedua perintah tersebut, maka setiap paket yang menuju ke IP 192.184.8.2 pada port 80 akan diarahkan ke dua alamat tujuan yang berbeda bergantian.
+- iptables ketiga dan keempat sama seperti kedua iptables sebelumnya, hanya portnya dan ipnya saja yang berbeda, yaitu dengan port 443 dan dari ip stark menuju sein.
+
+**Testing & Hasil :**
+Dapat dilakukan testing dengan melakukan command berikut di Sein dan Stark :
+```
+Sein :
+while true; do nc -l -p 80 -c 'echo "aku dari sein"'; done
+Stark :
+while true; do nc -l -p 80 -c 'echo "aku dari stark"'; done
+```
+
+Kemudian lakukan command ini untuk melakukan testing di client :
+```
+nc 192.184.8.2 80 #berkali kali
+```
+
+Hasil :
+
+![image](https://github.com/fathinmputra/Jarkom-Modul-5-B12-2023/assets/133391111/15516dab-3074-4619-b08e-b69f0558d8c6)
+
+
 ## NO. 8
 Karena berbeda koalisi politik, maka subnet dengan masyarakat yang berada pada Revolte dilarang keras mengakses WebServer hingga masa pencoblosan pemilu kepala suku 2024 berakhir. Masa pemilu (hingga pemungutan dan penghitungan suara selesai) kepala suku bersamaan dengan masa pemilu Presiden dan Wakil Presiden Indonesia 2024.
+
+### Penjelasan :
+
+```
+subnet_revolte="192.184.14.128/30"
+
+mulai_pemilu=$(date -d "2024-02-14T00:00" +"%Y-%m-%dT%H:%M")
+selesai_pemilu=$(date -d "2024-06-26T00:00" +"%Y-%m-%dT%H:%M")
+
+iptables -A INPUT -p tcp -s $subnet_revolte --dport 80 -m time --datestart "$mulai_pemilu" --datestop "$selesai_pemilu" -j DROP
+```
+- Inti dari iptables nya adalah web server akan menolak semua paket TCP yang berasal dari subnet yang ditentukan (Subnet Revolve) dan menuju ke port 80 (--dport 80) selama rentang waktu pemilu (-m time --datestart "$mulai_pemilu" --datestop "$selesai_pemilu").
+
+**Testing & Hasil :**
+> Revolte & GrobeForest
+```
+date -u 0310120024(keterangan 03=bulan, 10=tanggal, 1200=jam, 24=tahun)
+nmap 192.184.8.2 80
+```
+
+![image](https://github.com/fathinmputra/Jarkom-Modul-5-B12-2023/assets/133391111/b66b7f53-9b95-4440-8551-c0514416e5ce)
+
 
 ## NO. 9
 Sadar akan adanya potensial saling serang antar kubu politik, maka WebServer harus dapat secara otomatis memblokir  alamat IP yang melakukan scanning port dalam jumlah banyak (maksimal 20 scan port) di dalam selang waktu 10 menit. 
 (clue: test dengan nmap)
 
+### Penjelasan :
+```
+iptables -F
+
+iptables -N scan_port
+iptables -A INPUT -m recent --name scan_port --update --seconds 600 --hitcount 20 -j DROP
+iptables -A FORWARD -m recent --name scan_port --update --seconds 600 --hitcount 20 -j DROP
+iptables -A INPUT -m recent --name scan_port --set -j ACCEPT
+iptables -A FORWARD -m recent --name scan_port --set -j ACCEPT
+```
+- Inti fungsi dari aturan-aturan iptables tersebut adalah untuk mendeteksi dan memblokir pemindaian port dengan menghitung jumlah paket yang dikirimkan dari alamat yang sama dalam rentang waktu tertentu (600 seconds = 10 menit). Jika batas hitcount tercapai (20 hitcount), aturan DROP akan diterapkan, dan paket-paket pemindaian port akan ditolak.
+
+**Testing & Hasil :**
+Salah satu testing bisa dilakukan dengan ping ke web server.
+```
+ping 192.184.8.2
+```
+
+Hasil :
+
+![image](https://github.com/fathinmputra/Jarkom-Modul-5-B12-2023/assets/133391111/11ae5820-53d0-42db-8f9d-63d7e523adac)
+
+> Jika ping webserver, hanya akan masuk 20 packet saja tidak bisa lebih. Seperti hasil testing di atas, ada 33 packet yang terkirim tetapi hanya 20 yang masuk, dikarenakan webserver sudah menerapkan aturan iptables untuk drop paket-paket jika batas hitcount mencapai 20.
+
 ## NO. 10
 Karena kepala suku ingin tau paket apa saja yang di-drop, maka di setiap node server dan router ditambahkan logging paket yang di-drop dengan standard syslog level. 
 
+### Penjelasan :
 
+```
+iptables -A INPUT -j LOG --log-level debug --log-prefix "IPTables-Dropped: "
+```
+- `-A INPUT`: Menambahkan aturan ke rantai INPUT, yang mengatur paket-paket yang masuk ke sistem.
+- `-j LOG`: Mengarahkan paket yang memenuhi aturan ini ke target LOG. Ini berarti informasi tentang paket-paket tersebut akan dicatat dalam log sistem.
+- `--log-level debug`: Menentukan tingkat log yang diinginkan. Dalam contoh ini, tingkat log ditetapkan sebagai "debug". 
+- `--log-prefix "IPTables-Dropped: "`: Menentukan awalan pesan log yang akan ditambahkan ke setiap catatan log yang dihasilkan oleh aturan ini. Dalam contoh ini, awalan "IPTables-Dropped: " akan ditambahkan ke setiap catatan log.
+
+**Hasil :**
+
+![image](https://github.com/fathinmputra/Jarkom-Modul-5-B12-2023/assets/133391111/df22159c-29e6-4ac9-9f65-59aa4105d773)
 
 
 
